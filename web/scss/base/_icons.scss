@@ -58,6 +58,9 @@
   &[data-icon="external-link"]:before { content: "\ecae"; }
   &[data-icon="external-link-line"]:before { content: "\ecaf"; }
 
+  &[data-icon="search"]:before { content: "\f0d0"; }
+  &[data-icon="search-line"]:before { content: "\f0d1"; }
+
   &[data-icon="pause-circle"]:before { content: "\efd5"; }
   &[data-icon="pause-circle-line"]:before { content: "\efd6"; }
   &[data-icon="play-circle"]:before { content: "\f008"; }

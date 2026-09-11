@@ -317,7 +317,7 @@ class QueueOperations:
         """
         conn = get_connection()
         try:
-            if error or not mirrors:
+            if error:
                 # Scraping failed - mark as failed
                 conn.execute("""
                     UPDATE downloads
@@ -398,6 +398,25 @@ class QueueOperations:
                 except json.JSONDecodeError:
                     logger.warning(f"Invalid mirrors JSON for {row['md5']}")
                     continue
+
+                # An empty mirror list only reaches 'queued' when the scraper
+                # deliberately let it through for fast download (no mirror
+                # scrape needed there, so there's nothing to lock via
+                # busy_mirrors) - claim it directly.
+                if not mirrors:
+                    conn.execute("""
+                        UPDATE downloads
+                        SET status = 'downloading',
+                            assigned_worker = ?,
+                            assigned_mirror = NULL
+                        WHERE id = ?
+                    """, (worker_id, row['id']))
+                    conn.commit()
+
+                    result = row_to_dict(row)
+                    result['assigned_mirror'] = None
+                    logger.info(f"Worker {worker_id} claimed {row['md5']} for fast download (no mirrors)")
+                    return result
 
                 # Try to claim a mirror for this download
                 logger.debug(f"Trying {len(mirrors)} mirrors for {row['md5']}")

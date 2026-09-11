@@ -17,6 +17,7 @@
         <!-- Main Tabs -->
         <div>
           <button class="tab-button active" data-tab="downloads" data-icon="file-download"></button>
+          <button class="tab-button" data-tab="search" data-icon="search-line"></button>
           <button class="tab-button" data-tab="settings" data-icon="settings-3"></button>
           <button class="tab-button" data-tab="console" data-icon="terminal-box"></button>
         </div>
@@ -113,6 +114,61 @@
         </div>
       </div>
 
+      <!-- Search Tab -->
+      <div id="search-tab" class="tab-content">
+        <div class="card">
+          <div class="card-header">
+            <h2>Search Local Library Index</h2>
+          </div>
+          <div id="search-index-status" class="comment" style="padding: 0 1rem;">Checking index...</div>
+          <div class="settings-group" style="padding: 0 1rem 1rem;">
+            <div class="input-row" style="margin-bottom: 0.5rem;">
+              <input type="text" id="search-title" placeholder="Title..." />
+              <input type="text" id="search-author" placeholder="Author..." />
+            </div>
+            <div class="input-row" style="margin-bottom: 0.5rem;">
+              <input type="text" id="search-format" placeholder="Format (epub, pdf...)" />
+              <input type="text" id="search-language" placeholder="Language (english...)" />
+              <input type="number" id="search-limit" value="100" min="1" max="1000" style="width: 5rem;" title="Max results (up to 1000)" />
+            </div>
+            <div class="input-row" id="semantic-search-row" style="margin-bottom: 0.5rem; display: none;">
+              <input type="text" id="semantic-search-query" placeholder="Or describe what you're looking for, e.g. 'winter and dragons'..." style="max-width: 820px;" />
+            </div>
+            <div class="input-row" style="margin-bottom: 0.75rem;">
+              <button class="btn btn-success" data-icon="search-line" onclick="runSearch()">Search</button>
+            </div>
+            <label class="toggle-button">
+              <input type="checkbox" id="search-unique-titles" />
+              <span class="checkmark"></span>
+              <span>Unique titles only (collapse different editions/formats of the same title)</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="card-holder">
+          <section class="card">
+            <div class="card-header">
+              <h2>Results <span class="badge" id="search-results-count">0</span></h2>
+              <div class="card-header__actions">
+                <button class="btn" onclick="selectAllSearchResults(true)">Select All</button>
+                <button class="btn" onclick="selectAllSearchResults(false)">Select None</button>
+                <button class="btn btn-success" onclick="queueSelectedSearchResults()">Add Selected to Queue</button>
+              </div>
+            </div>
+            <div id="similar-banner" class="comment" style="padding: 0 1rem; display: none;">
+              Similar to: <strong id="similar-banner-title"></strong>
+              <button class="btn" style="margin-left: 0.75rem;" onclick="backToSearchResults()">Back to Search Results</button>
+            </div>
+            <div id="search-results-list" class="list">
+              <div class="empty-state">
+                <div class="empty-state-icon" data-icon="search-line"></div>
+                <div>Run a search to see results</div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+
       <!-- Settings Tab -->
       <div id="settings-tab" class="tab-content">
         <div class="settings-container">
@@ -123,6 +179,8 @@
               <li>FlareSolverr</li>
               <li>Proxy</li>
               <li>Queue</li>
+              <li>Similar Search</li>
+              <li>Descriptions</li>
               <li>Logging</li>
             </ul>
           </nav>
@@ -315,6 +373,48 @@
                 </div>
               </div>
             </div>
+            <!-- Similar Search -->
+            <div class="settings-content" data-setting="similar search">
+              <div class="settings-section">
+                <h3>
+                  <div class="title-switch">
+                    <label class="switch">
+                      <input type="checkbox" id="setting-similar-enabled" />
+                      <span class="slider"></span>
+                      <span class="label"></span>
+                    </label>
+                    Find Similar Books
+                  </div>
+                </h3>
+                <div class="settings-group">
+                  <label for="setting-similar-index-path">Index file path</label>
+                  <input type="text" id="setting-similar-index-path" placeholder="/opt/stacks/zlib_embeddings_full.sqlite3" maxlength="256" />
+                  <div class="comment">Path (inside the container) to a pre-built embeddings index. See tools/zlib-index/build_embeddings_desc.py. Swap this to point at a different index (e.g. title+author-only vs. description-based) without any code changes.</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Descriptions -->
+            <div class="settings-content" data-setting="descriptions">
+              <div class="settings-section">
+                <h3>
+                  <div class="title-switch">
+                    <label class="switch">
+                      <input type="checkbox" id="setting-description-enabled" />
+                      <span class="slider"></span>
+                      <span class="label"></span>
+                    </label>
+                    Show Book Descriptions
+                  </div>
+                </h3>
+                <div class="settings-group">
+                  <label for="setting-description-index-path">Index file path</label>
+                  <input type="text" id="setting-description-index-path" placeholder="/opt/stacks/zlib_descriptions_full.sqlite3" maxlength="256" />
+                  <div class="comment">Path (inside the container) to a pre-built descriptions index (see tools/zlib-index/extract_descriptions.py). Only a fraction of the catalog has one - results without a description simply show none.</div>
+                </div>
+              </div>
+            </div>
+
             <!-- Logging -->
             <div class="settings-content" data-setting="logging">
               <div class="settings-section">
@@ -356,7 +456,7 @@
             <span class="item-subfolder"></span>
             <span class="item-status"></span>
           </div>
-          <div class="item-md5"></div>
+          <a class="item-link" href="" target="_blank"><span class="item-md5"></span><span data-icon="external-link"></span></a>
           <div class="item-time"></div>
         </div>
         <button class="btn btn-danger" data-icon="file-close-line" onclick=""></button>

@@ -16,6 +16,7 @@ build/
 venv/
 env/
 ENV/
+.env
 .env/
 .venv/
 
@@ -40,6 +41,7 @@ coverage.xml
 release.sh
 cleanup.sh
 publish.sh
+sessions.txt
 
 # Project
 /download/
@@ -47,6 +49,21 @@ publish.sh
 /notes/
 /logs/
 /cache/
+/data/
+docker-compose.override.yml
+
+# Claude Code local settings (machine-specific permission overrides)
+.claude/settings.local.json
+
+# Anna's Archive metadata dumps / local search index (large, personal-use only)
+*.jsonl.zst
+*.jsonl.seekable.zst
+/tools/zlib-index/*.sqlite3
+/tools/zlib-index/*.sqlite3-shm
+/tools/zlib-index/*.sqlite3-wal
+/tools/zlib-index/*.sqlite3-journal
+/tools/zlib-index/*.log
+/tools/zlib-index/frame_offsets.txt
 /homepage-widget/
 RELEASE_CHECKLIST.md
 todo.md

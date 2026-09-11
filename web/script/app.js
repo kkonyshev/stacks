@@ -9,6 +9,9 @@ let lastLog = "{}";
 let consoleInterval = null;
 const md5Regex = /[a-fA-F0-9]{32}/;
 let subdirectoriesTagInput = null;
+const md5MetaCache = {};
+const md5MetaFetchInFlight = new Set();
+const ANNAS_ARCHIVE_MD5_URL = "https://annas-archive.gl/md5/";
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -516,6 +519,14 @@ function loadSettings() {
       // Queue
       document.getElementById("setting-max-history").value = config.queue?.max_history || 100;
 
+      // Similar Search
+      document.getElementById("setting-similar-enabled").checked = !!config.similar_search?.enabled;
+      document.getElementById("setting-similar-index-path").value = config.similar_search?.index_path || "";
+
+      // Descriptions
+      document.getElementById("setting-description-enabled").checked = !!config.description_index?.enabled;
+      document.getElementById("setting-description-index-path").value = config.description_index?.index_path || "";
+
       // Logging
       document.getElementById("setting-log-level").value = config.logging?.level || "WARNING";
     })
@@ -555,6 +566,14 @@ function saveSettings() {
     },
     queue: {
       max_history: parseInt(document.getElementById("setting-max-history").value),
+    },
+    similar_search: {
+      enabled: document.getElementById("setting-similar-enabled").checked,
+      index_path: document.getElementById("setting-similar-index-path").value || null,
+    },
+    description_index: {
+      enabled: document.getElementById("setting-description-enabled").checked,
+      index_path: document.getElementById("setting-description-index-path").value || null,
     },
     logging: {
       level: document.getElementById("setting-log-level").value,
@@ -826,6 +845,35 @@ function testProxy() {
 // UI UPDATE FUNCTIONS
 // ============================================================================
 
+function resolveMd5Metadata(md5s, onResolved) {
+  const missing = md5s.filter((md5) => md5 && !(md5 in md5MetaCache) && !md5MetaFetchInFlight.has(md5));
+  if (missing.length === 0) return;
+
+  missing.forEach((md5) => md5MetaFetchInFlight.add(md5));
+  apiFetch("/api/local_index/lookup", {
+    method: "POST",
+    body: JSON.stringify({ md5s: missing }),
+  })
+    .then((r) => r.json())
+    .then((data) => {
+      const results = (data && data.results) || {};
+      missing.forEach((md5) => {
+        md5MetaCache[md5] = results[md5.toLowerCase()] || null;
+        md5MetaFetchInFlight.delete(md5);
+      });
+      onResolved();
+    })
+    .catch(() => missing.forEach((md5) => md5MetaFetchInFlight.delete(md5)));
+}
+
+function displayNameForItem(item) {
+  const meta = md5MetaCache[item.md5];
+  if (meta && meta.title) {
+    return meta.author ? `${meta.title} — ${meta.author}` : meta.title;
+  }
+  return item.title || item.filename || item.md5;
+}
+
 function updateQueueList(queue) {
   const queueList = document.getElementById("queue-list");
 
@@ -833,6 +881,11 @@ function updateQueueList(queue) {
     queueList.innerHTML = document.getElementById("queue-empty-template").innerHTML;
     return;
   }
+
+  resolveMd5Metadata(
+    queue.map((item) => item.md5),
+    () => updateQueueList(queue)
+  );
 
   // Clear list
   queueList.innerHTML = "";
@@ -844,11 +897,10 @@ function updateQueueList(queue) {
   queue.forEach((item) => {
     const clone = template.content.cloneNode(true);
 
-    // Title: prefer title, then filename, fall back to MD5
-    const displayName = item.title || item.filename || item.md5;
-    clone.querySelector(".item-title-text").textContent = displayName;
+    clone.querySelector(".item-title-text").textContent = displayNameForItem(item);
 
-    // MD5 always shown below the title
+    // MD5 shown below the title, linked to the Anna's Archive page for it
+    clone.querySelector(".item-link").href = ANNAS_ARCHIVE_MD5_URL + item.md5;
     clone.querySelector(".item-md5").textContent = item.md5;
     clone.querySelector(".item-time").textContent = "Added: " + formatTime(item.added_at);
 
@@ -890,6 +942,11 @@ function updateHistoryList(history) {
     return;
   }
 
+  resolveMd5Metadata(
+    history.map((item) => item.md5),
+    () => updateHistoryList(history)
+  );
+
   // Clear list
   historyList.innerHTML = "";
 
@@ -909,9 +966,11 @@ function updateHistoryList(history) {
       statusIcon.setAttribute("data-icon", "close");
       statusIcon.className = "item-status-icon error-icon";
     }
-    clone.querySelector(".item-link").href = "https://annas-archive.gl/md5/" + item.md5;
-    // Title - filename or MD5
-    const displayName = item.filename || item.md5;
+    clone.querySelector(".item-link").href = ANNAS_ARCHIVE_MD5_URL + item.md5;
+    const meta = md5MetaCache[item.md5];
+    const displayName = meta && meta.title
+      ? (meta.author ? `${meta.title} — ${meta.author}` : meta.title)
+      : (item.filename || item.md5);
     clone.querySelector(".item-title-text").textContent = displayName;
 
     // Method icon (fast vs mirror)
@@ -994,9 +1053,282 @@ document.querySelectorAll(".tab-button").forEach((button) => {
       loadSettings();
     } else if (tabName === "console") {
       updateConsole();
+    } else if (tabName === "search") {
+      checkLibraryIndexStatus();
     }
   });
 });
+
+// ============================================================================
+// LOCAL LIBRARY SEARCH
+// ============================================================================
+
+let similarSearchAvailable = false;
+let lastSearchResults = [];
+
+function checkLibraryIndexStatus() {
+  const statusEl = document.getElementById("search-index-status");
+  apiFetch("/api/local_index/status")
+    .then((r) => r.json())
+    .then((data) => {
+      if (data.available) {
+        statusEl.textContent = `Index ready - ${data.record_count.toLocaleString()} books (${formatBytes(data.file_size)})`;
+        similarSearchAvailable = !!data.similar_search_available;
+      } else {
+        statusEl.textContent = "Local index not built yet - see tools/zlib-index/README for setup.";
+        similarSearchAvailable = false;
+      }
+      document.getElementById("semantic-search-row").style.display = similarSearchAvailable ? "block" : "none";
+    })
+    .catch(() => {
+      statusEl.textContent = "Could not check index status.";
+      similarSearchAvailable = false;
+      document.getElementById("semantic-search-row").style.display = "none";
+    });
+}
+
+function runSearch() {
+  const queryText = document.getElementById("semantic-search-query").value.trim();
+  if (queryText && similarSearchAvailable) {
+    runSemanticSearch(queryText);
+  } else {
+    runLibrarySearch();
+  }
+}
+
+function runLibrarySearch() {
+  const title = document.getElementById("search-title").value.trim();
+  const author = document.getElementById("search-author").value.trim();
+  const format = document.getElementById("search-format").value.trim();
+  const language = document.getElementById("search-language").value.trim();
+  const uniqueTitles = document.getElementById("search-unique-titles").checked;
+
+  const params = new URLSearchParams();
+  if (title) params.set("title", title);
+  if (author) params.set("author", author);
+  if (format) params.set("extension", format);
+  if (language) params.set("language", language);
+  if (uniqueTitles) params.set("unique_titles", "1");
+  const limit = parseInt(document.getElementById("search-limit").value) || 100;
+  params.set("limit", String(Math.min(limit, 1000)));
+
+  const resultsList = document.getElementById("search-results-list");
+  resultsList.innerHTML = `<div class="empty-state"><div>Searching...</div></div>`;
+
+  apiFetch(`/api/local_index/search?${params.toString()}`)
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data.success) {
+        resultsList.innerHTML = `<div class="empty-state"><div>${data.error || "Search failed"}</div></div>`;
+        document.getElementById("search-results-count").textContent = "0";
+        return;
+      }
+      lastSearchResults = data.results;
+      document.getElementById("similar-banner").style.display = "none";
+      renderSearchResults(data.results);
+    })
+    .catch((err) => {
+      resultsList.innerHTML = `<div class="empty-state"><div>Search failed: ${err}</div></div>`;
+    });
+}
+
+function backToSearchResults() {
+  document.getElementById("similar-banner").style.display = "none";
+  renderSearchResults(lastSearchResults);
+}
+
+function runSemanticSearch(queryText) {
+  queryText = queryText || document.getElementById("semantic-search-query").value.trim();
+  if (!queryText) return;
+
+  const resultsList = document.getElementById("search-results-list");
+  resultsList.innerHTML = `<div class="empty-state"><div>Searching by description...</div></div>`;
+
+  const limit = parseInt(document.getElementById("search-limit").value) || 100;
+  const params = new URLSearchParams({ query: queryText, limit: String(Math.min(limit, 50)) });
+  const language = document.getElementById("search-language").value.trim();
+  if (language) params.set("language", language);
+  const format = document.getElementById("search-format").value.trim();
+  if (format) params.set("extension", format);
+  const titleFilter = document.getElementById("search-title").value.trim();
+  if (titleFilter) params.set("title", titleFilter);
+  const authorFilter = document.getElementById("search-author").value.trim();
+  if (authorFilter) params.set("author", authorFilter);
+
+  apiFetch(`/api/local_index/semantic_search?${params.toString()}`)
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data.success) {
+        resultsList.innerHTML = `<div class="empty-state"><div>${data.error || "Search failed"}</div></div>`;
+        document.getElementById("search-results-count").textContent = "0";
+        return;
+      }
+      document.getElementById("similar-banner-title").textContent = `"${queryText}"`;
+      document.getElementById("similar-banner").style.display = "block";
+      renderSearchResults(data.results, { showDistance: true });
+    })
+    .catch((err) => {
+      resultsList.innerHTML = `<div class="empty-state"><div>Search failed: ${err}</div></div>`;
+    });
+}
+
+function findSimilar(md5, title) {
+  const resultsList = document.getElementById("search-results-list");
+  resultsList.innerHTML = `<div class="empty-state"><div>Finding similar books...</div></div>`;
+
+  const params = new URLSearchParams({ md5, limit: "20" });
+  const language = document.getElementById("search-language").value.trim();
+  if (language) params.set("language", language);
+
+  apiFetch(`/api/local_index/similar?${params.toString()}`)
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data.success) {
+        resultsList.innerHTML = `<div class="empty-state"><div>${data.error || "Find Similar failed"}</div></div>`;
+        return;
+      }
+      let bannerText = title || md5;
+      if (data.note) bannerText += ` (${data.note})`;
+      document.getElementById("similar-banner-title").textContent = bannerText;
+      document.getElementById("similar-banner").style.display = "block";
+      if (data.results.length === 0) {
+        resultsList.innerHTML = `<div class="empty-state"><div>${escapeHtml(data.note || "No similar books found")}</div></div>`;
+        document.getElementById("search-results-count").textContent = "0";
+        return;
+      }
+      renderSearchResults(data.results, { showDistance: true });
+    })
+    .catch((err) => {
+      resultsList.innerHTML = `<div class="empty-state"><div>Find Similar failed: ${err}</div></div>`;
+    });
+}
+
+function renderSearchResults(results, options = {}) {
+  const resultsList = document.getElementById("search-results-list");
+  document.getElementById("search-results-count").textContent = results.length;
+
+  if (results.length === 0) {
+    resultsList.innerHTML = `<div class="empty-state"><div>No matches</div></div>`;
+    return;
+  }
+
+  resultsList.innerHTML = "";
+  results.forEach((book) => {
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.style.display = "flex";
+    row.style.alignItems = "center";
+    row.style.gap = "0.75rem";
+
+    const sizeText = book.filesize ? formatBytes(book.filesize) : "?";
+    const metaParts = [book.extension, sizeText, book.language, book.year];
+    if (options.showDistance && typeof book.distance === "number") {
+      metaParts.push(`distance ${book.distance.toFixed(1)}`);
+    }
+    const meta = metaParts.filter(Boolean).join(" · ");
+    const title = book.title || "Untitled";
+
+    const label = document.createElement("label");
+    label.style.cssText = "display: flex; align-items: flex-start; gap: 0.75rem; flex: 1; cursor: pointer; min-width: 0;";
+    label.innerHTML = `
+      <input type="checkbox" class="search-result-checkbox" data-md5="${book.md5}" style="margin-top: 0.2rem;" />
+      <div class="item-info">
+        <div class="item-title">
+          <span class="item-title-text">${escapeHtml(title)}</span>
+        </div>
+        <div class="item-md5">${escapeHtml(book.author || "Unknown author")} - ${meta}</div>
+      </div>
+    `;
+    row.appendChild(label);
+
+    if (book.description) {
+      const descEl = document.createElement("div");
+      descEl.style.cssText = "font-size: 0.85em; color: var(--text-secondary, #888); margin-top: 0.35rem; line-height: 1.4;";
+      const full = book.description;
+      const previewLength = 200;
+      const truncated = full.length > previewLength;
+      const preview = truncated ? full.slice(0, previewLength).trim() + "…" : full;
+      descEl.textContent = preview;
+      if (truncated) {
+        descEl.style.cursor = "pointer";
+        descEl.title = "Click to expand";
+        let expanded = false;
+        descEl.addEventListener("click", (e) => {
+          e.preventDefault();
+          expanded = !expanded;
+          descEl.textContent = expanded ? full : preview;
+        });
+      }
+      label.querySelector(".item-info").appendChild(descEl);
+    }
+
+    if (similarSearchAvailable) {
+      const similarBtn = document.createElement("button");
+      similarBtn.className = "btn";
+      similarBtn.textContent = "Find Similar";
+      similarBtn.onclick = () => findSimilar(book.md5, title);
+      row.appendChild(similarBtn);
+    }
+
+    resultsList.appendChild(row);
+  });
+}
+
+function selectAllSearchResults(checked) {
+  document.querySelectorAll(".search-result-checkbox").forEach((cb) => {
+    cb.checked = checked;
+  });
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function queueSelectedSearchResults() {
+  const checked = document.querySelectorAll(".search-result-checkbox:checked");
+  if (checked.length === 0) {
+    toasts.show({
+      title: "Add to Queue",
+      message: "No books selected",
+      type: "error",
+    });
+    return;
+  }
+
+  const md5s = Array.from(checked).map((cb) => cb.dataset.md5);
+  let added = 0;
+  let failed = 0;
+
+  md5s.forEach((md5) => {
+    apiFetch("/api/queue/add", {
+      method: "POST",
+      body: JSON.stringify({ md5: md5, source: "library-search" }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success) {
+          added++;
+        } else {
+          failed++;
+        }
+      })
+      .catch(() => {
+        failed++;
+      })
+      .finally(() => {
+        if (added + failed === md5s.length) {
+          toasts.show({
+            title: "Add to Queue",
+            message: `Queued ${added} book(s)${failed ? `, ${failed} failed` : ""}`,
+            type: failed ? "error" : "success",
+          });
+          updateStatus();
+        }
+      });
+  });
+}
 
 // Settings navigation switching
 document.querySelectorAll(".settings-nav li").forEach((item, index) => {
@@ -1026,6 +1358,13 @@ document.querySelector(".add-item .btn-success").addEventListener("click", addDo
 document.getElementById("manual-add").addEventListener("keypress", (e) => {
   if (e.key === "Enter") {
     addDownload();
+  }
+});
+
+// Run semantic search on Enter key
+document.getElementById("semantic-search-query").addEventListener("keypress", (e) => {
+  if (e.key === "Enter") {
+    runSemanticSearch();
   }
 });
 

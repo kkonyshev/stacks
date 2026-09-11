@@ -35,9 +35,26 @@ flaresolverr:
 queue:
   max_history: 100
 
+similar_search:
+  enabled: false # "Find Similar" and free-text "Search by Description"
+  index_path: null # e.g. /opt/stacks/zlib_embeddings_full_by_lang.sqlite3
+  ollama_url: "http://ollama:11434" # only needed for free-text search (embeds the query live)
+  model: "embeddinggemma" # must match whatever model built the index
+
+description_index:
+  enabled: false # Shows a description snippet on search/similar results
+  index_path: null # e.g. /opt/stacks/zlib_descriptions_full.sqlite3
+
 logging:
   level: "INFO" # DEBUG, INFO, WARN, ERROR
 ```
+
+`similar_search` and `description_index` are both optional, independently
+toggleable add-ons on top of the local search index - see
+[tools/zlib-index/README.md](../tools/zlib-index/README.md) for how to
+build the index files they point at. When disabled (or the index file is
+missing), the corresponding UI (Find Similar buttons, description
+snippets, the Search by Description field) simply doesn't appear.
 
 All settings can be modified through the web interface Settings tab or by editing the config file directly. Changes through the web interface take effect immediately without requiring a restart. Editing the file requires a server restart for the changes to take hold. Deleting the file will create a new one upon next server start.
 
