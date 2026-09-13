@@ -49,3 +49,30 @@ services:
     environment:
       - LOG_LEVEL=info
     restart: unless-stopped
+
+  # Optional: powers the "Find Similar" and description-based search features
+  # (see tools/zlib-index/README and the similar_search config section), and
+  # can also serve the bulk index-building scripts in tools/zlib-index/.
+  # CPU-only here works fine for live search queries; for bulk embedding
+  # (millions of books) it's slower than a GPU host but still practical -
+  # measured ~159/s at concurrency>=8 on a 16-core host (vs ~270/s on an
+  # RTX 5070 Ti), so the whole pipeline is runnable via docker compose alone
+  # without needing GPU passthrough. Port 11435 is published (not 11434, to
+  # avoid clashing with a host-level Ollama install) so tools/zlib-index/
+  # scripts running directly on the host can reach it too.
+  #
+  # Model storage defaults to a project-local folder (self-contained, pull
+  # your own models with `docker compose exec ollama ollama pull <model>`).
+  # To reuse an existing host Ollama installation's models instead (skip
+  # re-downloading), set OLLAMA_MODELS_PATH in a .env file next to this
+  # compose file, e.g. OLLAMA_MODELS_PATH=/path/to/existing/ollama/models
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11435:11434"
+    environment:
+      - OLLAMA_MODELS=/models
+    volumes:
+      - "${OLLAMA_MODELS_PATH:-./data/ollama-models}:/models:z"
+    restart: unless-stopped

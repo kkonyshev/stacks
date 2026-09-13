@@ -128,9 +128,23 @@ def _get_download_links_single_domain(d, md5, domain):
 
     try:
         response = d.session.get(url, timeout=30)
-        response.raise_for_status()
 
-        soup = BeautifulSoup(response.text, 'html.parser')
+        if response.status_code in (403, 503):
+            if not d.flaresolverr_url:
+                d.logger.warning(f"Got {response.status_code} from {domain} but no FlareSolverr configured")
+                response.raise_for_status()
+
+            d.logger.warning(f"Got {response.status_code} from {domain}, solving challenge with FlareSolverr...")
+            success, _cookies, html_content = d.solve_with_flaresolverr(url)
+            if not success:
+                d.logger.error(f"FlareSolverr failed to solve challenge for {domain}")
+                response.raise_for_status()
+            response_text = html_content
+        else:
+            response.raise_for_status()
+            response_text = response.text
+
+        soup = BeautifulSoup(response_text, 'html.parser')
 
         # Helper function to extract filename from Filepath metadata
         def extract_from_filepath():
@@ -229,11 +243,23 @@ def _get_download_links_single_domain(d, md5, domain):
                 d.logger.warning("No Filepath metadata found, falling back to title extraction")
                 filename = extract_from_title()
 
-        # Final fallback - use MD5 hash in filename
+        # Final fallback - try the local search index before giving up.
+        # Its title/author/extension have been verified accurate against
+        # actual file contents, and don't depend on this page's HTML at all.
         if not filename:
-            d.logger.warning("No filename found, falling back to Unknown")
-            filename = f"Unknown ({md5})"
-        elif d.include_hash == "prefix":
+            d.logger.warning("No filename found, checking local search index")
+            from stacks.downloader.local_index import lookup_by_md5
+            match = lookup_by_md5(md5)
+            if match and match.get('title'):
+                title = re.sub(r'[<>:"/\\|?*]', '_', match['title']).rstrip('. ')
+                ext = (match.get('extension') or '').lstrip('.')
+                filename = f"{title}.{ext}" if ext else title
+                d.logger.info(f"Using local index metadata for filename: {filename}")
+            else:
+                d.logger.warning("No local index match, falling back to Unknown")
+                filename = f"Unknown ({md5})"
+
+        if d.include_hash == "prefix":
             filename = f"{md5} - {filename}"
         elif d.include_hash == "suffix":
             filename = f"{filename} - {md5}"
@@ -245,6 +271,14 @@ def _get_download_links_single_domain(d, md5, domain):
         downloads_panel = soup.find('div', id='md5-panel-downloads')
         if not downloads_panel:
             d.logger.warning("Could not find downloads panel on page")
+            try:
+                import os
+                debug_path = f"/opt/stacks/logs/debug_md5_{md5}.html"
+                with open(debug_path, "w") as fh:
+                    fh.write(response_text)
+                d.logger.warning(f"Dumped page HTML to {debug_path} for debugging")
+            except Exception as dump_err:
+                d.logger.warning(f"Could not dump debug HTML: {dump_err}")
             return filename, links
         
         # Slow_download links - only accept "no waitlist" ones

@@ -1,12 +1,16 @@
 # ========================================
 # Stage 1: Builder
 # ========================================
-FROM python:3.14.3-alpine3.23 AS builder
+# Debian-based (glibc), not Alpine (musl) - sqlite-vec only ships manylinux
+# (glibc) wheels with no sdist, so it cannot be built on musl at all.
+FROM python:3.14.3-slim AS builder
 
 WORKDIR /opt/stacks
 
 # Install build dependencies for packages with C extensions (like bcrypt)
-RUN apk add --no-cache gcc musl-dev libffi-dev
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install PEX
 RUN pip install --no-cache-dir pex
@@ -35,7 +39,7 @@ RUN rm -rf deps src web/scss requirements.txt
 # ========================================
 # Stage 2: Runtime
 # ========================================
-FROM python:3.14.3-alpine3.23
+FROM python:3.14.3-slim
 
 ARG VERSION=unknown
 ARG FINGERPRINT=unknown

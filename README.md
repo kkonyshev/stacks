@@ -31,6 +31,7 @@ Stacks is a containerized download queue manager designed specifically for Anna'
 - **Beautiful UI** - Dracula-themed interface with live progress tracking
 - **Resume Support** - Automatically resume interrupted downloads
 - **Download History** - Track successful and failed downloads with retry capability
+- **Local Search & Find Similar** _(optional)_ - Offline title/author search plus AI-powered "Find Similar" and free-text description search, built from Anna's Archive's own metadata - see [setup guide](./tools/zlib-index/README.md)
 
 ## Quick Start
 
@@ -242,6 +243,7 @@ Stacks implements multiple layers of security:
 - [Configuration](./docs/configuration.md)
 - [Tampermonkey installation](./docs/tampermonkey.md)
 - [Usage](./docs/usage.md)
+- [Local search index & semantic search (optional)](./tools/zlib-index/README.md)
 
 ## License
 

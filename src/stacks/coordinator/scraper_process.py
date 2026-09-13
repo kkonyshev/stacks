@@ -93,6 +93,13 @@ def scraper_process(config_path: Path, stop_event: Event) -> None:
                 flaresolverr_enabled = config.get('flaresolverr', 'enabled', default=False)
                 flaresolverr_url = config.get('flaresolverr', 'url', default='http://localhost:8191')
                 flaresolverr_timeout = config.get('flaresolverr', 'timeout', default=60)
+
+                # Fast download doesn't need mirrors at all - if it's configured,
+                # a failed mirror scrape shouldn't be treated as fatal.
+                fast_download_available = bool(
+                    config.get('fast_download', 'enabled', default=False)
+                    and config.get('fast_download', 'key')
+                )
                 flaresolverr_timeout_ms = flaresolverr_timeout * 1000
 
                 # Get incomplete folder path
@@ -134,6 +141,8 @@ def scraper_process(config_path: Path, stop_event: Event) -> None:
                             'text': link.get('text', '')
                         })
                     scraper_logger.info(f"Found {len(mirrors)} mirrors for {md5}")
+                elif fast_download_available:
+                    scraper_logger.info(f"No mirrors found for {md5}, will rely on fast download")
                 else:
                     error = "No mirrors found"
                     scraper_logger.warning(f"No mirrors found for {md5}")

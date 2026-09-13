@@ -112,3 +112,29 @@ logging:
   level:
     types: [LOGGING]
     default: "INFO"
+
+similar_search:
+  enabled:
+    types: [BOOL]
+    default: false
+  index_path:
+    types: [STRING, NULL]
+    default: null
+    max_length: 256
+  ollama_url:
+    types: [IP, URL, NULL]
+    default: "http://ollama:11434"
+    max_length: 256
+  model:
+    types: [STRING]
+    default: "embeddinggemma"
+    max_length: 64
+
+description_index:
+  enabled:
+    types: [BOOL]
+    default: false
+  index_path:
+    types: [STRING, NULL]
+    default: null
+    max_length: 256

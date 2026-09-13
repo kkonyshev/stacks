@@ -3,6 +3,7 @@ import time
 import requests
 import shutil
 import hashlib
+import zipfile
 from pathlib import Path
 from urllib.parse import urlparse, unquote
 
@@ -142,6 +143,34 @@ def download_direct(d, download_url, title=None, total_size=None, supports_resum
                 # Verify complete
                 if total_size and downloaded < total_size:
                     raise Exception(f"Incomplete download: {downloaded}/{total_size} bytes")
+
+                # Some fast-download mirrors (observed on the "pilimi-zlib" torrent
+                # range) wrap the actual file in a zip container instead of serving
+                # it directly - the real file inside is named after its own md5.
+                # Detect and unwrap before verifying, or every such file fails
+                # MD5 verification even though the download itself succeeded.
+                with open(temp_path, "rb") as fcheck:
+                    magic = fcheck.read(4)
+                if magic == b"PK\x03\x04":
+                    try:
+                        with zipfile.ZipFile(temp_path) as zf:
+                            names = zf.namelist()
+                            inner_name = None
+                            if md5:
+                                inner_name = next((n for n in names if md5.lower() in n.lower()), None)
+                            if inner_name is None and len(names) == 1:
+                                inner_name = names[0]
+                            if inner_name:
+                                d.logger.info(f"Downloaded file is a zip wrapper, extracting inner file: {inner_name}")
+                                extracted_path = temp_path.with_suffix(temp_path.suffix + ".extracted")
+                                with zf.open(inner_name) as src, open(extracted_path, "wb") as dst:
+                                    shutil.copyfileobj(src, dst)
+                                extracted_path.replace(temp_path)
+                                downloaded = temp_path.stat().st_size
+                            else:
+                                d.logger.warning(f"Zip wrapper has unexpected contents, using as-is: {names}")
+                    except zipfile.BadZipFile:
+                        d.logger.warning("File starts with zip magic bytes but failed to open as a zip, using as-is")
 
                 # Verify MD5 hash if provided
                 if md5:
