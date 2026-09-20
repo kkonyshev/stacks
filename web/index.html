@@ -371,6 +371,15 @@
                   <label for="setting-max-history">Maximum history items (0 = unlimited)</label>
                   <input type="number" id="setting-max-history" min="0" max="1000" value="100" />
                 </div>
+                <div class="settings-group">
+                  <h3>Failure handling</h3>
+                  <label class="toggle-button">
+                    <input type="checkbox" id="setting-stop-on-failure" />
+                    <span class="checkmark"></span>
+                    <span>Pause the queue after the first failed download</span>
+                  </label>
+                  <div class="comment">When enabled, the queue pauses as soon as a download fails, so the remaining items are not processed until you resume. Downloads already in progress on other workers finish normally.</div>
+                </div>
               </div>
             </div>
             <!-- Similar Search -->

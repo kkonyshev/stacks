@@ -47,6 +47,9 @@ downloads:
     default: 3
     min: 0
     max: 10
+  stop_on_failure:
+    types: [BOOL]
+    default: false
   prefer_title_naming:
     types: [BOOL]
     default: false

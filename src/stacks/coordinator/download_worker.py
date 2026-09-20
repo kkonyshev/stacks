@@ -375,6 +375,10 @@ def download_worker_process(
                 worker_logger.info(f"Download complete: {title or md5}")
             else:
                 worker_logger.warning(f"Download failed: {title or md5} - {error}")
+                config.load()  # Pick up setting changes made since startup
+                if config.get('downloads', 'stop_on_failure', default=False):
+                    queue_ops.set_paused(True)
+                    worker_logger.warning("stop_on_failure is enabled: queue paused after failed download")
 
             # Rate limiting between downloads
             delay = config.get('downloads', 'delay', default=2)

@@ -22,6 +22,7 @@ downloads:
   delay: 2 # Delay in seconds
   retry_count: 3
   resume_attempts: 3
+  stop_on_failure: false # Pause the queue after the first failed download
 
 fast_download:
   enabled: false

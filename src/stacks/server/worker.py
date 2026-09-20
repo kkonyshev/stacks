@@ -198,6 +198,13 @@ class DownloadWorker:
             self.paused = False
             self.logger.info("Download worker resumed")
 
+    def _pause_if_stop_on_failure(self):
+        """Pause the queue after a failed download when stop_on_failure is enabled"""
+        self.config.load()
+        if self.config.get('downloads', 'stop_on_failure', default=False) and not self.paused:
+            self.paused = True
+            self.logger.warning("stop_on_failure is enabled: queue paused after failed download")
+
     def cancel_and_requeue_current(self):
         """Cancel current download and requeue it"""
         if self.queue.current_download:
@@ -351,6 +358,7 @@ class DownloadWorker:
                     self.queue.mark_complete(item['md5'], True, filepath=filepath, used_fast_download=used_fast_download, filename=filename, subfolder=item.get('subfolder'))
                 else:
                     self.queue.mark_complete(item['md5'], False, error="Download failed", filename=filename, subfolder=item.get('subfolder'))
+                    self._pause_if_stop_on_failure()
 
             except Exception as e:
                 self.logger.error(f"Download error: {item['md5']} - {e}")
@@ -376,6 +384,7 @@ class DownloadWorker:
                     continue
 
                 self.queue.mark_complete(item['md5'], False, error=str(e), filename=filename, subfolder=item.get('subfolder'))
+                self._pause_if_stop_on_failure()
             
             # Rate limiting
             if self.queue.queue:
