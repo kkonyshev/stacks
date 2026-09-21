@@ -2,9 +2,10 @@
 
 ## Web Interface
 
-The web interface provides two main tabs:
+The web interface provides several tabs:
 
 - **Downloads Tab**: Monitor current download, view queue, and check history
+- **Library Tab**: Browse the files already downloaded to disk, filter them, and select some (or all) to download to your computer as a single `.zip` archive
 - **Settings Tab**: Configure download behavior, login credentials, fast download API, and logging
 
 The dashboard updates in real-time every 2 seconds, showing:

@@ -1057,8 +1057,184 @@ document.querySelectorAll(".tab-button").forEach((button) => {
       updateConsole();
     } else if (tabName === "search") {
       checkLibraryIndexStatus();
+    } else if (tabName === "library") {
+      loadLibrary();
     }
   });
+});
+
+// ============================================================================
+// DOWNLOADED FILES (LIBRARY TAB)
+// ============================================================================
+
+let libraryFiles = [];
+const librarySelection = new Set();
+
+function loadLibrary() {
+  apiFetch("/api/library/files")
+    .then((r) => r.json())
+    .then((data) => {
+      if (!data.success) throw new Error(data.error || "Failed to load files");
+      libraryFiles = data.files;
+      // Forget selections for files that no longer exist on disk
+      const present = new Set(libraryFiles.map((f) => f.path));
+      Array.from(librarySelection).forEach((p) => {
+        if (!present.has(p)) librarySelection.delete(p);
+      });
+      renderLibrary();
+    })
+    .catch((err) => {
+      console.error("Failed to load library:", err);
+      document.getElementById("library-summary").textContent = "Failed to load downloaded files";
+    });
+}
+
+function visibleLibraryFiles() {
+  const filter = document.getElementById("library-filter").value.trim().toLowerCase();
+  if (!filter) return libraryFiles;
+  return libraryFiles.filter((f) => f.path.toLowerCase().includes(filter));
+}
+
+function updateLibrarySummary() {
+  const totalSize = libraryFiles.reduce((sum, f) => sum + f.size, 0);
+  const selectedSize = libraryFiles
+    .filter((f) => librarySelection.has(f.path))
+    .reduce((sum, f) => sum + f.size, 0);
+  document.getElementById("library-summary").textContent =
+    `${libraryFiles.length} file(s), ${formatBytes(totalSize)} total` +
+    ` · ${librarySelection.size} selected (${formatBytes(selectedSize)})`;
+}
+
+function renderLibrary() {
+  const list = document.getElementById("library-list");
+  const files = visibleLibraryFiles();
+  document.getElementById("library-count").textContent = libraryFiles.length;
+  updateLibrarySummary();
+
+  if (files.length === 0) {
+    list.innerHTML = "";
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    const msg = document.createElement("div");
+    msg.textContent = libraryFiles.length === 0 ? "No downloaded files yet" : "No files match the filter";
+    empty.appendChild(msg);
+    list.appendChild(empty);
+    return;
+  }
+
+  list.innerHTML = "";
+  files.forEach((file) => {
+    const row = document.createElement("div");
+    row.className = "list-item";
+    row.style.display = "flex";
+    row.style.alignItems = "center";
+    row.style.gap = "0.75rem";
+
+    const label = document.createElement("label");
+    label.style.cssText = "display: flex; align-items: flex-start; gap: 0.75rem; flex: 1; cursor: pointer; min-width: 0;";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "library-file-checkbox";
+    checkbox.style.marginTop = "0.2rem";
+    checkbox.dataset.path = file.path;
+    checkbox.checked = librarySelection.has(file.path);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) librarySelection.add(file.path);
+      else librarySelection.delete(file.path);
+      updateLibrarySummary();
+    });
+
+    const info = document.createElement("div");
+    info.className = "item-info";
+    const title = document.createElement("div");
+    title.className = "item-title";
+    const titleText = document.createElement("span");
+    titleText.className = "item-title-text";
+    titleText.textContent = file.name;
+    title.appendChild(titleText);
+    const meta = document.createElement("div");
+    meta.className = "item-md5";
+    const parts = [file.folder, formatBytes(file.size), new Date(file.modified * 1000).toLocaleDateString()];
+    meta.textContent = parts.filter(Boolean).join(" · ");
+    info.appendChild(title);
+    info.appendChild(meta);
+
+    label.appendChild(checkbox);
+    label.appendChild(info);
+    row.appendChild(label);
+    list.appendChild(row);
+  });
+}
+
+// Selects/clears the files currently shown (respects the filter); "none" clears everything.
+function selectAllLibraryFiles(checked) {
+  if (checked) {
+    visibleLibraryFiles().forEach((f) => librarySelection.add(f.path));
+  } else {
+    librarySelection.clear();
+  }
+  renderLibrary();
+}
+
+function downloadLibrary(all) {
+  if (!all && librarySelection.size === 0) {
+    toasts.show({ title: "Download", message: "No files selected", type: "error" });
+    return;
+  }
+  if (all && libraryFiles.length === 0) {
+    toasts.show({ title: "Download", message: "No downloaded files to archive", type: "error" });
+    return;
+  }
+
+  // A native form POST lets the browser stream the zip straight to disk instead of
+  // buffering a potentially multi-GB archive in memory the way fetch() + Blob would.
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = "/api/library/archive";
+  form.target = "library-download-frame";
+  form.style.display = "none";
+
+  const addField = (name, value) => {
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = name;
+    input.value = value;
+    form.appendChild(input);
+  };
+  if (all) addField("all", "1");
+  else addField("selection", JSON.stringify(Array.from(librarySelection)));
+
+  document.body.appendChild(form);
+  form.submit();
+  form.remove();
+
+  const count = all ? libraryFiles.length : librarySelection.size;
+  toasts.show({
+    title: "Download",
+    message: `Preparing archive of ${count} file(s)...`,
+    type: "success",
+  });
+}
+
+// A successful archive is an attachment, so the hidden frame never loads it.
+// If the frame does load, the server returned an error page/JSON instead.
+document.getElementById("library-download-frame").addEventListener("load", (e) => {
+  let text = "";
+  try {
+    text = e.target.contentDocument.body.textContent || "";
+  } catch (err) {
+    return;
+  }
+  if (!text.trim()) return;
+  let message = "Archive download failed";
+  try {
+    message = JSON.parse(text).error || message;
+  } catch (err) {
+    // Not JSON (e.g. a proxy error page); keep the generic message
+  }
+  toasts.show({ title: "Download", message: message, type: "error" });
+  loadLibrary();
 });
 
 // ============================================================================

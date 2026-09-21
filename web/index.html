@@ -18,6 +18,7 @@
         <div>
           <button class="tab-button active" data-tab="downloads" data-icon="file-download"></button>
           <button class="tab-button" data-tab="search" data-icon="search-line"></button>
+          <button class="tab-button" data-tab="library" data-icon="book-2-line"></button>
           <button class="tab-button" data-tab="settings" data-icon="settings-3"></button>
           <button class="tab-button" data-tab="console" data-icon="terminal-box"></button>
         </div>
@@ -167,6 +168,35 @@
             </div>
           </section>
         </div>
+      </div>
+
+      <!-- Library Tab -->
+      <div id="library-tab" class="tab-content">
+        <div class="card-holder">
+          <section class="card">
+            <div class="card-header">
+              <h2>Downloaded Files <span class="badge" id="library-count">0</span></h2>
+              <div class="card-header__actions">
+                <button class="btn" onclick="loadLibrary()">Refresh</button>
+                <button class="btn" onclick="selectAllLibraryFiles(true)">Select All</button>
+                <button class="btn" onclick="selectAllLibraryFiles(false)">Select None</button>
+                <button class="btn btn-success" onclick="downloadLibrary(false)">Download Selected (.zip)</button>
+                <button class="btn btn-success" onclick="downloadLibrary(true)">Download All (.zip)</button>
+              </div>
+            </div>
+            <div class="settings-group" style="padding: 0 1rem 0.5rem;">
+              <input type="text" id="library-filter" placeholder="Filter by name or folder..." oninput="renderLibrary()" />
+              <div class="comment" id="library-summary">Loading...</div>
+            </div>
+            <div id="library-list" class="list">
+              <div class="empty-state">
+                <div class="empty-state-icon" data-icon="book-2-line"></div>
+                <div>No downloaded files yet</div>
+              </div>
+            </div>
+          </section>
+        </div>
+        <iframe id="library-download-frame" name="library-download-frame" style="display: none;" title="Archive download"></iframe>
       </div>
 
       <!-- Settings Tab -->

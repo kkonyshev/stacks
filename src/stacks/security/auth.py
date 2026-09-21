@@ -1,6 +1,7 @@
 import logging
 import secrets
 import string
+import threading
 from datetime import datetime, timedelta
 import bcrypt
 from functools import wraps
@@ -12,6 +13,16 @@ logger = logging.getLogger("auth")
 # In-memory tracking of attempts and lockouts
 login_attempts: dict[str, list[datetime]] = {}
 login_lockouts: dict[str, datetime] = {}
+_rate_limit_lock = threading.Lock()
+
+
+def _locked(f):
+    """Serialize access to the login attempt/lockout dicts across worker threads."""
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        with _rate_limit_lock:
+            return f(*args, **kwargs)
+    return wrapper
 
 def generate_secret_key():
     """Generate 192bit secret key"""
@@ -36,6 +47,7 @@ def is_valid_bcrypt_hash(hash_string):
     # Bcrypt hashes start with $2a$, $2b$, or $2y$ and are 60 characters
     return (hash_string.startswith(('$2a$', '$2b$', '$2y$')) and len(hash_string) == 60)
 
+@_locked
 def check_rate_limit(ip):
     """Check if IP is rate limited. Returns (allowed, message)"""
     # Check if locked out
@@ -82,12 +94,14 @@ def check_rate_limit(ip):
     
     return True, None
 
+@_locked
 def record_failed_attempt(ip):
     """Record a failed login attempt"""
     if ip not in login_attempts:
         login_attempts[ip] = []
     login_attempts[ip].append(datetime.now())
 
+@_locked
 def clear_attempts(ip):
     """Clear login attempts for IP after successful login"""
     if ip in login_attempts:

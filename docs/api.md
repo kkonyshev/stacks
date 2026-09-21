@@ -63,6 +63,15 @@ Stacks supports three authentication methods with different permission levels:
 | `/api/history/clear` | POST   | ✔️       | ✔️         | ❌      | Clear download history  |
 | `/api/history/retry` | POST   | ✔️       | ✔️         | ❌      | Retry a failed download |
 
+### Library
+
+| Endpoint               | Method | Session | Admin Key | DL Key | Description                                                      |
+| ---------------------- | ------ | ------- | --------- | ------ | ---------------------------------------------------------------- |
+| `/api/library/files`   | GET    | ✔️       | ✔️         | ❌      | List finished files in the download folder                       |
+| `/api/library/archive` | POST   | ✔️       | ✔️         | ❌      | Stream selected (or all) finished files as a single `.zip` file  |
+
+The incomplete folder, hidden files (names starting with `.`) and symlinks are never listed or archived. `/api/library/archive` takes a JSON body (or form fields) with either `"all": true` or `"selection"`, a list of paths exactly as returned by `/api/library/files`.
+
 ### Configuration
 
 | Endpoint                        | Method | Session | Admin Key | DL Key | Description                                    |
@@ -98,6 +107,19 @@ or for downloader keys:
   "valid": true,
   "type": "downloader"
 }
+```
+
+### Download Files as a Zip Archive
+
+```bash
+# Everything
+curl -X POST -H "X-API-Key: YOUR_ADMIN_KEY" -H "Content-Type: application/json" \
+  -d '{"all": true}' -o library.zip http://localhost:7788/api/library/archive
+
+# Only some files (paths as returned by /api/library/files)
+curl -X POST -H "X-API-Key: YOUR_ADMIN_KEY" -H "Content-Type: application/json" \
+  -d '{"selection": ["Some Author - Some Book.epub", "Fiction/Another Book.pdf"]}' \
+  -o books.zip http://localhost:7788/api/library/archive
 ```
 
 ### Add Item to Queue (works with both Admin and Downloader keys)

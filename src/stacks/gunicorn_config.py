@@ -8,7 +8,10 @@ bind = "0.0.0.0:7788"
 
 # Worker processes
 workers = 4
-worker_class = "sync"
+# Threaded workers: a sync worker is killed after `timeout` seconds of a single
+# request, which would cut off large library archive downloads mid-stream.
+worker_class = "gthread"
+threads = 4
 worker_connections = 1000
 timeout = 120
 keepalive = 5
