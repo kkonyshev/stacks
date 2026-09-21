@@ -69,8 +69,11 @@ Stacks supports three authentication methods with different permission levels:
 | ---------------------- | ------ | ------- | --------- | ------ | ---------------------------------------------------------------- |
 | `/api/library/files`   | GET    | ✔️       | ✔️         | ❌      | List finished files in the download folder                       |
 | `/api/library/archive` | POST   | ✔️       | ✔️         | ❌      | Stream selected (or all) finished files as a single `.zip` file  |
+| `/api/library/delete`  | POST   | ✔️       | ✔️         | ❌      | Permanently delete the selected finished files                   |
 
 The incomplete folder, hidden files (names starting with `.`) and symlinks are never listed or archived. `/api/library/archive` takes a JSON body (or form fields) with either `"all": true` or `"selection"`, a list of paths exactly as returned by `/api/library/files`.
+
+`/api/library/delete` takes `{"selection": [...]}` only (there is deliberately no delete-all). All paths are validated before anything is removed, so a single invalid path rejects the whole request; only files are deleted, never folders. Browser requests from another origin are rejected unless they carry a valid admin API key.
 
 ### Configuration
 

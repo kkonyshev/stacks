@@ -4,13 +4,15 @@ import os
 import stat
 import zipfile
 from datetime import datetime
+from functools import wraps
 from pathlib import Path
+from urllib.parse import urlparse
 
 from flask import Response, current_app, jsonify, request, stream_with_context
 
 from . import api_bp
 from stacks.constants import DOWNLOAD_PATH, PROJECT_ROOT
-from stacks.security.auth import require_auth_with_permissions
+from stacks.security.auth import require_auth_with_permissions, validate_api_key
 
 logger = logging.getLogger("api")
 
@@ -174,8 +176,41 @@ def stream_zip(entries):
         yield out
 
 
+def _is_cross_origin() -> bool:
+    """True if a browser is making this request from a different origin."""
+    site = request.headers.get('Sec-Fetch-Site')
+    if site:
+        return site not in ('same-origin', 'none')
+    origin = request.headers.get('Origin')
+    if not origin:
+        return False
+    allowed = {request.host, request.headers.get('X-Forwarded-Host')}
+    return urlparse(origin).netloc not in allowed
+
+
+def same_origin_or_admin_key(f):
+    """
+    Refuse cross-origin browser requests unless they carry a valid admin API key.
+
+    The app reflects any Origin in its CORS headers with credentials allowed, so a
+    third-party web page could otherwise drive these endpoints using the user's
+    logged-in session cookie. Same-origin UI use and plain API-key clients
+    (curl, scripts) are unaffected.
+    """
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if _is_cross_origin():
+            provided = request.headers.get('X-API-Key') or request.args.get('api_key')
+            is_valid, key_type = validate_api_key(provided)
+            if not (is_valid and key_type == 'admin'):
+                return jsonify({'success': False, 'error': 'Cross-origin requests require an admin API key'}), 403
+        return f(*args, **kwargs)
+    return wrapper
+
+
 @api_bp.route('/api/library/files', methods=['GET'])
 @require_auth_with_permissions(allow_downloader=False)
+@same_origin_or_admin_key
 def api_library_files():
     """List finished files in the download folder."""
     config = current_app.stacks_config
@@ -190,6 +225,7 @@ def api_library_files():
 
 @api_bp.route('/api/library/archive', methods=['POST'])
 @require_auth_with_permissions(allow_downloader=False)
+@same_origin_or_admin_key
 def api_library_archive():
     """
     Stream selected (or all) library files as a single zip archive.
@@ -250,3 +286,49 @@ def api_library_archive():
             'X-Accel-Buffering': 'no',
         },
     )
+
+
+@api_bp.route('/api/library/delete', methods=['POST'])
+@require_auth_with_permissions(allow_downloader=False)
+@same_origin_or_admin_key
+def api_library_delete():
+    """
+    Permanently delete the selected finished files from the download folder.
+
+    Body: {"selection": [paths as returned by /api/library/files]}. Every path is
+    validated before anything is removed, so one invalid path rejects the whole
+    request. Directories are never removed, only the files themselves.
+    """
+    payload = request.get_json(silent=True) or {}
+    selection = payload.get('selection')
+    if not isinstance(selection, list) or not selection:
+        return jsonify({'success': False, 'error': 'No files selected'}), 400
+
+    root = DOWNLOAD_PATH.resolve()
+    incomplete = _incomplete_dir(current_app.stacks_config)
+
+    targets = {}
+    for rel in selection:
+        resolved = resolve_library_file(rel, root, incomplete)
+        if resolved is None:
+            return jsonify({'success': False, 'error': f'Invalid file: {rel}'}), 400
+        targets[resolved.relative_to(root).as_posix()] = resolved
+
+    deleted, failed, freed = [], [], 0
+    for rel, path in targets.items():
+        try:
+            size = os.lstat(path).st_size
+            os.unlink(path)
+            deleted.append(rel)
+            freed += size
+        except OSError as e:
+            logger.warning(f"Library delete: could not remove {rel}: {e}")
+            failed.append({'path': rel, 'error': e.strerror or str(e)})
+
+    logger.info(f"Library delete: removed {len(deleted)} file(s) ({freed} bytes), {len(failed)} failed")
+    return jsonify({
+        'success': not failed,
+        'deleted': deleted,
+        'freed_bytes': freed,
+        'failed': failed,
+    })

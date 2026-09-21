@@ -1217,6 +1217,47 @@ function downloadLibrary(all) {
   });
 }
 
+function deleteSelectedLibraryFiles() {
+  const paths = Array.from(librarySelection);
+  if (paths.length === 0) {
+    toasts.show({ title: "Delete", message: "No files selected", type: "error" });
+    return;
+  }
+
+  const size = libraryFiles
+    .filter((f) => librarySelection.has(f.path))
+    .reduce((sum, f) => sum + f.size, 0);
+  if (!confirm(`Permanently delete ${paths.length} file(s) (${formatBytes(size)}) from the server?\n\nThis cannot be undone.`)) {
+    return;
+  }
+
+  apiFetch("/api/library/delete", {
+    method: "POST",
+    body: JSON.stringify({ selection: paths }),
+  })
+    .then((r) => r.json())
+    .then((data) => {
+      if (data.deleted) data.deleted.forEach((p) => librarySelection.delete(p));
+      if (data.success) {
+        toasts.show({
+          title: "Delete",
+          message: `Deleted ${data.deleted.length} file(s), freed ${formatBytes(data.freed_bytes)}`,
+          type: "success",
+        });
+      } else {
+        const detail = data.failed && data.failed.length
+          ? `${data.failed.length} file(s) could not be deleted (${data.failed[0].error})`
+          : data.error || "Delete failed";
+        toasts.show({ title: "Delete", message: detail, type: "error" });
+      }
+    })
+    .catch((err) => {
+      console.error("Failed to delete files:", err);
+      toasts.show({ title: "Delete", message: "Delete failed", type: "error" });
+    })
+    .finally(() => loadLibrary());
+}
+
 // A successful archive is an attachment, so the hidden frame never loads it.
 // If the frame does load, the server returned an error page/JSON instead.
 document.getElementById("library-download-frame").addEventListener("load", (e) => {
